@@ -288,33 +288,43 @@ do
     end)
 end
 ----------------------------------------------------------------
--- 🔁 AFK AUTO-CLICK (anti-kick 20m) + DARK OVERLAY
--- - ป้องกันเตะออก: VirtualUser + VirtualInputManager + Idled hook
--- - คลิกเล็ก ๆ / เมาส์ขยับ / Spacebar กันว่าง
--- - มีสวิตช์เปิดปิด + จอมืดบัง UI เกม (แต่ยังเห็น UFO HUB X)
+-- 🔁 AFK AUTO-CLICK (anti-kick) + DARK OVERLAY (with your image)
+-- - กันเตะ: VirtualUser + VirtualInputManager + Idled hook
+-- - ขณะ ON: ซ่อน UI เกมทั้งหมด + แสดงจอมืดจากรูปของคุณ
+-- - UFO HUB X (mainGui) ยังมองเห็นอยู่ด้านบน
 ----------------------------------------------------------------
 
 -------------------- CONFIG --------------------
-local INTERVAL_KEEPALIVE = 55        -- keepalive ทุก 55 วิ
-local INTERVAL_BIGCLICK  = 300       -- คลิกใหญ่ทุก 5 นาที
-local SAFE_JUMP_EVERY    = 300       -- spacebar ทุก 5 นาที
-local ENABLE_SAFE_JUMP   = true      -- ปิดได้ถ้ารบกวนเกม
-local DARK_IMAGE_URL     = "https://i.postimg.cc/HkmvppsP/20250923-234025.png"
+local INTERVAL_KEEPALIVE = 55      -- keepalive ทุก 55 วิ
+local INTERVAL_BIGCLICK  = 300     -- คลิกใหญ่ทุก 5 นาที
+local SAFE_JUMP_EVERY    = 300     -- space ทุก 5 นาที
+local ENABLE_SAFE_JUMP   = true
+
+-- ใช้รูปดำของคุณ (อัปโหลดใน Roblox แล้ว)
+local USE_IMAGE_BLACKOUT = true
+local IMAGE_ASSET_ID     = 84174878502255  -- <<<< เลขที่ให้มา
 
 -------------------- SERVICES --------------------
-local TS    = TS or game:GetService("TweenService")
-local UIS   = game:GetService("UserInputService")
-local VIM   = game:GetService("VirtualInputManager")
+local TS  = TS or game:GetService("TweenService")
+local UIS = game:GetService("UserInputService")
+local VIM = game:GetService("VirtualInputManager")
 local Players = game:GetService("Players")
-local LP    = Players.LocalPlayer
+local LP  = Players.LocalPlayer
 local VirtualUser = game:GetService("VirtualUser")
-local CG    = game:GetService("CoreGui")
+local StarterGui = game:GetService("StarterGui")
+local CoreGui    = game:GetService("CoreGui")
+local ContentProvider = game:GetService("ContentProvider")
 
-local ACCENT = Color3.fromRGB(0,255,140)
-local SUB    = Color3.fromRGB(22,22,22)
-local FG     = Color3.fromRGB(235,235,235)
+-- สีธีม (fallback)
+local ACCENT = ACCENT or Color3.fromRGB(0,255,140)
+local SUB    = SUB    or Color3.fromRGB(22,22,22)
+local FG     = FG     or Color3.fromRGB(235,235,235)
 
--------------------- BUILD UI ROW --------------------
+-- ต้องมี content (พื้นที่ปุ่ม) และ mainGui (UFO HUB X) อยู่แล้ว
+local content = content
+local mainGui = mainGui or CoreGui:FindFirstChildWhichIsA("ScreenGui")
+
+-------------------- UI: แถวสวิตช์ AFK --------------------
 local function make(class, props, kids)
     local o=Instance.new(class)
     for k,v in pairs(props or {}) do o[k]=v end
@@ -322,10 +332,7 @@ local function make(class, props, kids)
     return o
 end
 
--- ลบของเก่าถ้ามี
-local old = content and content:FindFirstChild("UFOX_RowAFK")
-if old then old:Destroy() end
-
+local old = content and content:FindFirstChild("UFOX_RowAFK"); if old then old:Destroy() end
 local rowAFK = make("Frame",{
     Name="UFOX_RowAFK", Parent=content, BackgroundColor3=Color3.fromRGB(18,18,18),
     Size=UDim2.new(1,-20,0,44), Position=UDim2.fromOffset(10,10)
@@ -351,124 +358,138 @@ local knob = make("Frame",{
     BackgroundColor3=Color3.fromRGB(210,60,60), BorderSizePixel=0
 },{ make("UICorner",{CornerRadius=UDim.new(1,0)}) })
 
--------------------- DARK OVERLAY --------------------
+-------------------- DARK OVERLAY (อยู่ใต้ UFO HUB X) --------------------
 local overlayGui = Instance.new("ScreenGui")
 overlayGui.Name = "UFOX_DarkOverlay"
 overlayGui.IgnoreGuiInset = true
 overlayGui.ResetOnSpawn = false
-overlayGui.DisplayOrder = 9999
-overlayGui.Parent = CG
+overlayGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+overlayGui.DisplayOrder = ((mainGui and mainGui.DisplayOrder) or 10) - 1 -- ใต้ UFO HUB X
+overlayGui.Enabled = false
+overlayGui.Parent  = CoreGui
 
-local darkFrame = Instance.new("ImageLabel")
-darkFrame.Size = UDim2.fromScale(1,1)
-darkFrame.BackgroundTransparency = 1
-darkFrame.Image = DARK_IMAGE_URL
-darkFrame.ImageTransparency = 0
-darkFrame.ZIndex = 0
-darkFrame.Parent = overlayGui
+local blackout
+if USE_IMAGE_BLACKOUT and IMAGE_ASSET_ID > 0 then
+    blackout = Instance.new("ImageLabel")
+    blackout.Image = "rbxassetid://"..tostring(IMAGE_ASSET_ID)
+    blackout.ScaleType = Enum.ScaleType.Crop
+    blackout.BackgroundTransparency = 1
+    blackout.ImageTransparency = 0
+    pcall(function() ContentProvider:PreloadAsync({blackout}) end)
+else
+    blackout = Instance.new("Frame")
+    blackout.BackgroundColor3 = Color3.new(0,0,0)
+    blackout.BackgroundTransparency = 0
+end
+blackout.Name = "Layer"
+blackout.Size = UDim2.fromScale(1,1)
+blackout.Position = UDim2.fromOffset(0,0)
+blackout.ZIndex = 0
+blackout.Active = true -- บล็อกคลิก UI เกมด้านล่าง
+blackout.Parent = overlayGui
 
-overlayGui.Enabled = false -- เริ่มต้นปิดไว้
-
-local function showOverlay(on)
-    overlayGui.Enabled = on
+-- ซ่อน CoreGui เกมเมื่อเปิด AFK
+local coreBackup = {}
+local function hideCoreGui()
+    coreBackup = {
+        Topbar    = true,
+        PlayerList= StarterGui:GetCoreGuiEnabled(Enum.CoreGuiType.PlayerList),
+        Chat      = StarterGui:GetCoreGuiEnabled(Enum.CoreGuiType.Chat),
+        Backpack  = StarterGui:GetCoreGuiEnabled(Enum.CoreGuiType.Backpack),
+        Emotes    = StarterGui:GetCoreGuiEnabled(Enum.CoreGuiType.EmotesMenu),
+        Health    = StarterGui:GetCoreGuiEnabled(Enum.CoreGuiType.Health),
+    }
+    pcall(function() StarterGui:SetCore("TopbarEnabled", false) end)
+    pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList,false) end)
+    pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Chat,      false) end)
+    pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack,  false) end)
+    pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.EmotesMenu,false) end)
+    pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Health,    false) end)
+end
+local function showCoreGui()
+    pcall(function() StarterGui:SetCore("TopbarEnabled", coreBackup.Topbar) end)
+    local map = {
+        [Enum.CoreGuiType.PlayerList]=coreBackup.PlayerList,
+        [Enum.CoreGuiType.Chat]=coreBackup.Chat,
+        [Enum.CoreGuiType.Backpack]=coreBackup.Backpack,
+        [Enum.CoreGuiType.EmotesMenu]=coreBackup.Emotes,
+        [Enum.CoreGuiType.Health]=coreBackup.Health,
+    }
+    for t,v in pairs(map) do
+        if v ~= nil then pcall(function() StarterGui:SetCoreGuiEnabled(t,v) end) end
+    end
+    coreBackup = {}
 end
 
--------------------- ENGINES --------------------
-local AFK_ON = false
-local idleConn
-local keepaliveThread
-local bigClickThread
+-------------------- Anti-idle engines --------------------
+local AFK_ON=false
+local idleConn, keepaliveThread, bigClickThread
 local lastBig, lastJump = 0,0
 
-local function cameraCenterXY()
+local function camXY()
     local cam = workspace.CurrentCamera
-    if not cam then return 400, 300 end
-    local v = cam.ViewportSize
+    if not cam then return 400,300 end
+    local v=cam.ViewportSize
     return math.floor(v.X/2), math.floor(v.Y/2)
 end
-
-local function tinyMouseNudge()
-    local x,y = cameraCenterXY()
+local function tinyMouse()
+    local x,y = camXY()
     pcall(function()
-        VIM:SendMouseMoveEvent(x+1, y, game, 0)
-        task.wait(0.02)
-        VIM:SendMouseMoveEvent(x,   y, game, 0)
+        VIM:SendMouseMoveEvent(x+1,y,game,0); task.wait(0.02)
+        VIM:SendMouseMoveEvent(x,  y,game,0)
     end)
 end
-
-local function virtualUserKick()
-    pcall(function()
-        VirtualUser:CaptureController()
-        VirtualUser:ClickButton2(Vector2.new(0,0))
-    end)
+local function vuKick()
+    pcall(function() VirtualUser:CaptureController(); VirtualUser:ClickButton2(Vector2.new(0,0)) end)
 end
-
-local function softSpacebar()
+local function softSpace()
     if not ENABLE_SAFE_JUMP then return end
     pcall(function()
         VIM:SendKeyEvent(true, Enum.KeyCode.Space, false, game); task.wait(0.03)
         VIM:SendKeyEvent(false,Enum.KeyCode.Space, false, game)
     end)
 end
-
-local function simulateKeepAlive()
-    tinyMouseNudge()
-    virtualUserKick()
-end
-
-local function simulateBig()
-    local x,y = cameraCenterXY()
+local function keepAlive() tinyMouse(); vuKick() end
+local function bigClick()
+    local x,y = camXY()
     pcall(function()
-        VIM:SendMouseButtonEvent(x, y, 0, true, game, 0)
-        task.wait(0.05)
-        VIM:SendMouseButtonEvent(x, y, 0, false, game, 0)
+        VIM:SendMouseButtonEvent(x,y,0,true,game,0); task.wait(0.05)
+        VIM:SendMouseButtonEvent(x,y,0,false,game,0)
     end)
 end
 
--------------------- UI STATE --------------------
 local function setAFKUI(on)
     if on then
         lbAFK.Text = "AFK (ON)"
-        TS:Create(swAFK, TweenInfo.new(0.12), {BackgroundColor3 = Color3.fromRGB(28,60,40)}):Play()
-        TS:Create(knob,  TweenInfo.new(0.12), {Position=UDim2.new(1,-22,0,2), BackgroundColor3=ACCENT}):Play()
+        TS:Create(swAFK, TweenInfo.new(0.12), {BackgroundColor3=Color3.fromRGB(28,60,40)}):Play()
+        TS:Create(knob , TweenInfo.new(0.12), {Position=UDim2.new(1,-22,0,2), BackgroundColor3=ACCENT}):Play()
     else
         lbAFK.Text = "AFK (OFF)"
-        TS:Create(swAFK, TweenInfo.new(0.12), {BackgroundColor3 = SUB}):Play()
-        TS:Create(knob,  TweenInfo.new(0.12), {Position=UDim2.new(0,2,0,2),  BackgroundColor3=Color3.fromRGB(210,60,60)}):Play()
+        TS:Create(swAFK, TweenInfo.new(0.12), {BackgroundColor3=SUB}):Play()
+        TS:Create(knob , TweenInfo.new(0.12), {Position=UDim2.new(0,2,0,2),  BackgroundColor3=Color3.fromRGB(210,60,60)}):Play()
     end
 end
 
--------------------- CONTROL --------------------
 local function startAFK()
     if AFK_ON then return end
-    AFK_ON = true
-    setAFKUI(true)
-    showOverlay(true)
+    AFK_ON=true; setAFKUI(true)
+
+    overlayGui.Enabled = true
+    hideCoreGui()
 
     if idleConn then idleConn:Disconnect() end
     idleConn = LP.Idled:Connect(function()
-        simulateKeepAlive()
-        softSpacebar()
+        keepAlive(); softSpace()
     end)
 
     keepaliveThread = task.spawn(function()
-        while AFK_ON do
-            simulateKeepAlive()
-            task.wait(INTERVAL_KEEPALIVE)
-        end
+        while AFK_ON do keepAlive(); task.wait(INTERVAL_KEEPALIVE) end
     end)
-
     bigClickThread = task.spawn(function()
         while AFK_ON do
-            local now = os.clock()
-            if now - lastBig >= INTERVAL_BIGCLICK then
-                simulateBig()
-                lastBig = now
-            end
-            if ENABLE_SAFE_JUMP and (now - lastJump >= SAFE_JUMP_EVERY) then
-                softSpacebar()
-                lastJump = now
-            end
+            local now=os.clock()
+            if now-lastBig >= INTERVAL_BIGCLICK then bigClick(); lastBig=now end
+            if ENABLE_SAFE_JUMP and (now-lastJump >= SAFE_JUMP_EVERY) then softSpace(); lastJump=now end
             task.wait(1)
         end
     end)
@@ -476,9 +497,11 @@ end
 
 local function stopAFK()
     if not AFK_ON then return end
-    AFK_ON = false
-    setAFKUI(false)
-    showOverlay(false)
+    AFK_ON=false; setAFKUI(false)
+
+    overlayGui.Enabled = false
+    showCoreGui()
+
     if idleConn then idleConn:Disconnect(); idleConn=nil end
 end
 
@@ -486,13 +509,11 @@ swAFK.MouseButton1Click:Connect(function()
     if AFK_ON then stopAFK() else startAFK() end
 end)
 
--- ให้เรียกจากสคริปต์อื่นได้
 _G.UFO_AFK_IsOn  = function() return AFK_ON end
 _G.UFO_AFK_Start = startAFK
 _G.UFO_AFK_Stop  = stopAFK
 _G.UFO_AFK_Set   = function(b) if b then startAFK() else stopAFK() end end
 
--- ค่าเริ่มต้น
 setAFKUI(false)
 ----------------------------------------------------------------
 -- 💰 AUTO-CLAIM (ทุก 5 วิ ยิง Claim ทุก Pet)
