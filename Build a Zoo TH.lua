@@ -299,7 +299,7 @@ local INTERVAL_KEEPALIVE = 55        -- keepalive ทุก 55 วิ
 local INTERVAL_BIGCLICK  = 300       -- คลิกใหญ่ทุก 5 นาที
 local SAFE_JUMP_EVERY    = 300       -- spacebar ทุก 5 นาที
 local ENABLE_SAFE_JUMP   = true      -- ปิดได้ถ้ารบกวนเกม
-local DARK_IMAGE_URL     = "https://i.postimg.cc/Wh9w8cZM/dark.png"
+local DARK_IMAGE_URL     = "https://i.postimg.cc/HkmvppsP/20250923-234025.png"
 
 -------------------- SERVICES --------------------
 local TS    = TS or game:GetService("TweenService")
