@@ -204,3 +204,86 @@ UIS.InputBegan:Connect(function(i,gp)
         if TOGGLE_DOCKED then dockToggleToMain() end
     end
 end)
+----------------------------------------------------------------
+-- 🔩 REQUIRE: โค้ดนี้สมมติว่าคุณมีตัวแปร/ฟังก์ชันต่อไปนี้จาก UI หลัก:
+-- mainGui, content, left, TS (TweenService), ACCENT, SUB, FG
+-- ถ้าไม่มี ผมใส่ fallback ไว้ให้ด้านล่างแล้ว
+----------------------------------------------------------------
+local TS = TS or game:GetService("TweenService")
+local Players = game:GetService("Players")
+local LP = Players.LocalPlayer
+local VirtualUser = game:GetService("VirtualUser")
+local RS = game:GetService("ReplicatedStorage")
+
+local ACCENT = ACCENT or Color3.fromRGB(0,255,140)
+local SUB    = SUB    or Color3.fromRGB(22,22,22)
+local FG     = FG     or Color3.fromRGB(235,235,235)
+
+-- ตัวช่วยสร้างอินสแตนซ์
+local function make(class, props, kids)
+    local o=Instance.new(class)
+    for k,v in pairs(props or {}) do o[k]=v end
+    for _,c in ipairs(kids or {}) do c.Parent=o end
+    return o
+end
+----------------------------------------------------------------
+-- 🏠 HOME BUTTON (ยาวขึ้น + ขอบเขียวคม)
+----------------------------------------------------------------
+do
+    -- ลบของเก่าถ้ามี
+    local old = left:FindFirstChild("UFOX_HomeBtn")
+    if old then old:Destroy() end
+
+    -- ปุ่ม: ยาวแทบเต็มกรอบ (เหลือขอบซ้ายขวา 2px)
+    local btnHome = make("TextButton",{
+        Name="UFOX_HomeBtn", Parent=left, AutoButtonColor=false,
+        Size=UDim2.new(1,-4,0,48),      -- ✅ ยาวขึ้น
+        Position=UDim2.fromOffset(2,10),-- ✅ ลงล่างนิด/ชิดซ้ายนิด
+        BackgroundColor3=SUB, Font=Enum.Font.GothamBold,
+        TextSize=16, TextColor3=FG, Text="", ClipsDescendants=true
+    },{
+        make("UICorner",{CornerRadius=UDim.new(0,10)}),
+        make("UIStroke",{                 -- ✅ ขอบเขียวกลับมาและคมชัด
+            Color=ACCENT, Thickness=2, Transparency=0,
+            ApplyStrokeMode=Enum.ApplyStrokeMode.Border
+        })
+    })
+
+    -- ไอคอน + ข้อความภายในปุ่ม
+    local row = make("Frame",{
+        Parent=btnHome, BackgroundTransparency=1,
+        Size=UDim2.new(1,-16,1,0), Position=UDim2.new(0,8,0,0)
+    },{
+        make("UIListLayout",{
+            FillDirection=Enum.FillDirection.Horizontal, Padding=UDim.new(0,8),
+            HorizontalAlignment=Enum.HorizontalAlignment.Left,
+            VerticalAlignment=Enum.VerticalAlignment.Center
+        })
+    })
+    make("TextLabel",{Parent=row, BackgroundTransparency=1, Size=UDim2.fromOffset(20,20),
+        Font=Enum.Font.GothamBold, TextSize=16, Text="👽", TextColor3=FG})
+    make("TextLabel",{Parent=row, BackgroundTransparency=1, Size=UDim2.new(1,-36,1,0),
+        Font=Enum.Font.GothamBold, TextSize=16, Text="Home",
+        TextXAlignment=Enum.TextXAlignment.Left, TextColor3=FG})
+
+    -- เอฟเฟกต์ hover เล็ก ๆ
+    btnHome.MouseEnter:Connect(function()
+        TS:Create(btnHome, TweenInfo.new(0.08), {BackgroundColor3 = Color3.fromRGB(32,32,32)}):Play()
+    end)
+    btnHome.MouseLeave:Connect(function()
+        TS:Create(btnHome, TweenInfo.new(0.12), {BackgroundColor3 = SUB}):Play()
+    end)
+
+    -- คลิกเปิดหน้า Home (ถ้ามีฟังก์ชันภายนอก)
+    btnHome.MouseButton1Click:Connect(function()
+        if typeof(_G.UFO_OpenHomePage)=="function" then
+            pcall(_G.UFO_OpenHomePage)
+        else
+            -- กะพริบ content แจ้งผู้ใช้
+            TS:Create(content, TweenInfo.new(0.10), {BackgroundColor3 = Color3.fromRGB(24,24,24)}):Play()
+            task.delay(0.12, function()
+                TS:Create(content, TweenInfo.new(0.10), {BackgroundColor3 = Color3.fromRGB(16,16,16)}):Play()
+            end)
+        end
+    end)
+end
