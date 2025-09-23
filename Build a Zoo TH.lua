@@ -406,11 +406,11 @@ end
 -- ===== UI states =====
 local function setAFKUI(on)
     if on then
-        lbAFK.Text = "กันเตะ AFK (ON)"
+        lbAFK.Text = "กันเตะ AFK (เปิด)"
         TS:Create(swAFK, TweenInfo.new(0.12), {BackgroundColor3 = Color3.fromRGB(28,60,40)}):Play()
         TS:Create(knob,  TweenInfo.new(0.12), {Position=UDim2.new(1,-22,0,2), BackgroundColor3=ACCENT}):Play()
     else
-        lbAFK.Text = "กันเตะ AFK (OFF)"
+        lbAFK.Text = "กันเตะ AFK (ปิด)"
         TS:Create(swAFK, TweenInfo.new(0.12), {BackgroundColor3 = SUB}):Play()
         TS:Create(knob,  TweenInfo.new(0.12), {Position=UDim2.new(0,2,0,2),  BackgroundColor3=Color3.fromRGB(210,60,60)}):Play()
     end
@@ -517,11 +517,11 @@ local function buildAutoClaimRow(y)
 
     local function setUI(state)
         if state then
-            lb.Text="เก็บเงินอัตโนมัติ (ON)"
+            lb.Text="เก็บเงินอัตโนมัติ (เปิด)"
             TS:Create(sw,   TweenInfo.new(0.12), {BackgroundColor3=Color3.fromRGB(28,60,40)}):Play()
             TS:Create(knob, TweenInfo.new(0.12), {Position=UDim2.new(1,-22,0,2), BackgroundColor3=ACCENT}):Play()
         else
-            lb.Text="เก็บเงินอัตโนมัติ (OFF)"
+            lb.Text="เก็บเงินอัตโนมัติ (ปิด)"
             TS:Create(sw,   TweenInfo.new(0.12), {BackgroundColor3=SUB}):Play()
             TS:Create(knob, TweenInfo.new(0.12), {Position=UDim2.new(0,2,0,2), BackgroundColor3=Color3.fromRGB(210,60,60)}):Play()
         end
@@ -706,11 +706,11 @@ end
 
 local function setUI(state)
     if state then
-        lb.Text = "เปิดไข่อัตโนมัติ (ON)"
+        lb.Text = "เปิดไข่อัตโนมัติ (เปิด)"
         TS:Create(sw, TweenFast, {BackgroundColor3 = Color3.fromRGB(28,60,40)}):Play()
         TS:Create(knob, TweenFast, {Position=UDim2.new(1,-22,0,2), BackgroundColor3=ACCENT}):Play()
     else
-        lb.Text = "เปิดไข่อัตโนมัติ (OFF)"
+        lb.Text = "เปิดไข่อัตโนมัติ (ปิด)"
         TS:Create(sw, TweenFast, {BackgroundColor3 = SUB}):Play()
         TS:Create(knob, TweenFast, {Position=UDim2.new(0,2,0,2), BackgroundColor3 = Color3.fromRGB(210,60,60)}):Play()
     end
