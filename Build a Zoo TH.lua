@@ -1,5 +1,5 @@
 --========================================================
--- UFO HUB X — FULL (no left HOME btn, no right welcome text)
+-- UFO HUB X — FULL (now with Home button + AFK switch)
 --========================================================
 
 -------------------- Services --------------------
@@ -7,6 +7,9 @@ local TS      = game:GetService("TweenService")
 local UIS     = game:GetService("UserInputService")
 local CG      = game:GetService("CoreGui")
 local Camera  = workspace.CurrentCamera
+local Players = game:GetService("Players")
+local LP      = Players.LocalPlayer
+local VirtualUser = game:GetService("VirtualUser")
 
 -------------------- CONFIG --------------------
 local LOGO_ID      = 112676905543996  -- โลโก้
@@ -17,6 +20,9 @@ local TOGGLE_DY    = -70              -- ยกปุ่มขึ้นจาก
 local CENTER_TWEEN = true
 local CENTER_TIME  = 0.25
 local TOGGLE_DOCKED = true            -- เริ่มแบบเกาะซ้าย
+
+-- AFK
+local INTERVAL_SEC = 5*60             -- กี่วินาทีต่อหนึ่งครั้งคลิก (5 นาที)
 
 -------------------- Helpers --------------------
 local function safeParent(gui)
@@ -40,6 +46,8 @@ local ACCENT = Color3.fromRGB(0,255,140)
 local BG     = Color3.fromRGB(12,12,12)
 local FG     = Color3.fromRGB(230,230,230)
 local SUB    = Color3.fromRGB(22,22,22)
+local D_GREY = Color3.fromRGB(16,16,16)
+local OFFCOL = Color3.fromRGB(210,60,60)
 
 -------------------- ScreenGuis --------------------
 local mainGui   = make("ScreenGui", {Name="UFOHubX_Main", ResetOnSpawn=false, ZIndexBehavior=Enum.ZIndexBehavior.Sibling}, {})
@@ -104,20 +112,19 @@ local function mkX(rot)
 end
 mkX(45); mkX(-45)
 
--- Sidebar (ปล่อยว่าง พร้อมใส่ปุ่มในอนาคต) ---------------------
+-- Sidebar ------------------------------------------------
 local left = make("Frame", {Parent=main, Size=UDim2.new(0,170,1,-60), Position=UDim2.new(0,12,0,55),
     BackgroundColor3=Color3.fromRGB(18,18,18)},
     {make("UICorner",{CornerRadius=UDim.new(0,12)}), make("UIStroke",{Color=ACCENT, Transparency=0.85})})
 make("UIListLayout",{Parent=left, Padding=UDim.new(0,10)})
 
--- Content (ไม่มีหัวข้อ/ตัวหนังสือใดๆ) --------------------------
+-- Content ------------------------------------------------
 local content = make("Frame", {Parent=main, Size=UDim2.new(1,-210,1,-70), Position=UDim2.new(0,190,0,60),
-    BackgroundColor3=Color3.fromRGB(16,16,16)},
+    BackgroundColor3=D_GREY},
     {make("UICorner",{CornerRadius=UDim.new(0,12)}), make("UIStroke",{Color=ACCENT, Transparency=0.8})})
 
 local pgHome = make("Frame",{Parent=content, Size=UDim2.new(1,-20,1,-20), Position=UDim2.new(0,10,0,10),
     BackgroundTransparency=1, Visible=true}, {})
--- ✨ ไม่มี TextLabel ในหน้านี้แล้ว ตามที่ขอ
 
 -------------------- Toggle Button (dock + drag) --------------------
 local btnToggle = make("ImageButton", {
@@ -176,28 +183,22 @@ local function centerMain(animated)
     if TOGGLE_DOCKED then dockToggleToMain() end
 end
 
--- เริ่มต้น: จัดกลาง + dock
 centerMain(false)
 Camera:GetPropertyChangedSignal("ViewportSize"):Connect(function() centerMain(false) end)
-
 main.InputEnded:Connect(function(i)
     if i.UserInputType==Enum.UserInputType.MouseButton1 and TOGGLE_DOCKED then
         dockToggleToMain()
     end
 end)
-
 btnToggle.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        TOGGLE_DOCKED = false -- ลากเอง → ปลด dock อัตโนมัติ
+        TOGGLE_DOCKED = false -- ลากเอง → ปลด dock
     end
 end)
-
--- ปุ่มลัด: F9 = จัดกลาง + รี-dock, F8 = toggle dock on/off
 UIS.InputBegan:Connect(function(i,gp)
     if gp then return end
     if i.KeyCode==Enum.KeyCode.F9 then
-        TOGGLE_DOCKED = true
-        centerMain(true)
+        TOGGLE_DOCKED = true; centerMain(true)
     elseif i.KeyCode==Enum.KeyCode.F8 then
         TOGGLE_DOCKED = not TOGGLE_DOCKED
         if TOGGLE_DOCKED then dockToggleToMain() end
