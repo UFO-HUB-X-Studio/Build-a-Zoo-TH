@@ -287,3 +287,286 @@ do
         end
     end)
 end
+----------------------------------------------------------------
+-- 🔁 AFK AUTO-CLICK (anti-kick 20m) — drop-in replacement
+-- ใช้ VirtualUser + VirtualInputManager + Idled hook หลายชั้น
+-- - คลิกเบา ๆ / ขยับเมาส์ / ส่งปุ่มสเปซเป็นครั้งคราว
+-- - ค่าเริ่มต้น: กันเตะทุก ~55 วิ + คลิกใหญ่ทุก 5 นาที
+----------------------------------------------------------------
+local INTERVAL_KEEPALIVE = 55        -- ส่งสัญญาณกันว่างทุก ๆ 55 วิ (น้อยกว่า 60)
+local INTERVAL_BIGCLICK  = 5*60      -- คลิกใหญ่ทุก 5 นาที (กันเกมที่เช็คหนัก)
+local SAFE_JUMP_EVERY    = 5*60      -- กระตุก spacebar ทุก 5 นาที (เบามาก, ปิดได้ด้วยตัวแปร)
+local ENABLE_SAFE_JUMP   = true      -- ถ้ารบกวนเกม ให้ตั้ง false
+
+-- ===== Dependencies ที่ UI หลักมีอยู่แล้ว =====
+local TS    = TS or game:GetService("TweenService")
+local UIS   = game:GetService("UserInputService")
+local VIM   = game:GetService("VirtualInputManager")
+local Players = game:GetService("Players")
+local LP    = LP or Players.LocalPlayer
+local VirtualUser = VirtualUser or game:GetService("VirtualUser")
+local ACCENT = ACCENT or Color3.fromRGB(0,255,140)
+local SUB    = SUB    or Color3.fromRGB(22,22,22)
+local FG     = FG     or Color3.fromRGB(235,235,235)
+local content = content  -- มาจาก UI หลัก
+
+-- ลบของเก่า (ถ้ามี)
+local old = content and content:FindFirstChild("UFOX_RowAFK")
+if old then old:Destroy() end
+
+-- ===== UI แถวสวิตช์ (เล็กสไตล์ iOS) =====
+local function make(class, props, kids)
+    local o=Instance.new(class); for k,v in pairs(props or {}) do o[k]=v end
+    for _,c in ipairs(kids or {}) do c.Parent=o end; return o
+end
+
+local rowAFK = make("Frame",{
+    Name="UFOX_RowAFK", Parent=content, BackgroundColor3=Color3.fromRGB(18,18,18),
+    Size=UDim2.new(1,-20,0,44), Position=UDim2.fromOffset(10,10)
+},{
+    make("UICorner",{CornerRadius=UDim.new(0,10)}),
+    make("UIStroke",{Color=ACCENT, Thickness=2, Transparency=0.05})
+})
+
+local lbAFK = make("TextLabel",{
+    Parent=rowAFK, BackgroundTransparency=1, Text="AFK (OFF)",
+    Font=Enum.Font.GothamBold, TextSize=15, TextColor3=FG, TextXAlignment=Enum.TextXAlignment.Left,
+    Position=UDim2.new(0,12,0,0), Size=UDim2.new(1,-150,1,0)
+},{})
+
+local swAFK = make("TextButton",{
+    Parent=rowAFK, AutoButtonColor=false, Text="", AnchorPoint=Vector2.new(1,0.5),
+    Position=UDim2.new(1,-12,0.5,0), Size=UDim2.fromOffset(60,24), BackgroundColor3=SUB
+},{
+    make("UICorner",{CornerRadius=UDim.new(1,0)}),
+    make("UIStroke",{Color=ACCENT, Thickness=2, Transparency=0.05})
+})
+local knob = make("Frame",{
+    Parent=swAFK, Size=UDim2.fromOffset(20,20), Position=UDim2.new(0,2,0,2),
+    BackgroundColor3=Color3.fromRGB(210,60,60), BorderSizePixel=0
+},{ make("UICorner",{CornerRadius=UDim.new(1,0)}) })
+
+-- ===== Core anti-idle engines =====
+local AFK_ON = false
+local idleConn
+local keepaliveThread
+local bigClickThread
+local lastBig = 0
+local lastJump = 0
+
+local function cameraCenterXY()
+    local cam = workspace.CurrentCamera
+    if not cam then return 400, 300 end
+    local v = cam.ViewportSize
+    return math.floor(v.X/2), math.floor(v.Y/2)
+end
+
+local function tinyMouseNudge()
+    -- ขยับเมาส์ 1 พิกเซลไปมา (บางเกมพอแค่นี้)
+    local x,y = cameraCenterXY()
+    pcall(function()
+        VIM:SendMouseMoveEvent(x+1, y, game, 0)
+        task.wait(0.02)
+        VIM:SendMouseMoveEvent(x,   y, game, 0)
+    end)
+end
+
+local function virtualUserKick()
+    -- ยิง VirtualUser แบบมาตรฐานกันเตะ
+    pcall(function()
+        VirtualUser:CaptureController()
+        VirtualUser:ClickButton2(Vector2.new(0,0))
+    end)
+end
+
+local function softSpacebar()
+    if not ENABLE_SAFE_JUMP then return end
+    pcall(function()
+        VIM:SendKeyEvent(true, Enum.KeyCode.Space, false, game); task.wait(0.03)
+        VIM:SendKeyEvent(false,Enum.KeyCode.Space, false, game)
+    end)
+end
+
+local function simulateKeepAlive()
+    -- เล็กแต่ถี่: พยายามไม่รบกวนเกม
+    tinyMouseNudge()
+    virtualUserKick()
+end
+
+local function simulateBig()
+    -- กดคลิกชัด ๆ ที่กึ่งกลาง (เผื่อบางเกมเช็คเข้ม)
+    local x,y = cameraCenterXY()
+    pcall(function()
+        VIM:SendMouseButtonEvent(x, y, 0, true, game, 0)
+        task.wait(0.05)
+        VIM:SendMouseButtonEvent(x, y, 0, false, game, 0)
+    end)
+end
+
+-- ===== UI states =====
+local function setAFKUI(on)
+    if on then
+        lbAFK.Text = "AFK (ON)"
+        TS:Create(swAFK, TweenInfo.new(0.12), {BackgroundColor3 = Color3.fromRGB(28,60,40)}):Play()
+        TS:Create(knob,  TweenInfo.new(0.12), {Position=UDim2.new(1,-22,0,2), BackgroundColor3=ACCENT}):Play()
+    else
+        lbAFK.Text = "AFK (OFF)"
+        TS:Create(swAFK, TweenInfo.new(0.12), {BackgroundColor3 = SUB}):Play()
+        TS:Create(knob,  TweenInfo.new(0.12), {Position=UDim2.new(0,2,0,2),  BackgroundColor3=Color3.fromRGB(210,60,60)}):Play()
+    end
+end
+
+-- ===== Loops & hooks =====
+local function startAFK()
+    if AFK_ON then return end
+    AFK_ON = true
+    setAFKUI(true)
+
+    -- Hook Roblox anti-idle: โดนเรียกก่อนครบ 20 นาทีเสมอ
+    if idleConn then idleConn:Disconnect() end
+    idleConn = LP.Idled:Connect(function()
+        simulateKeepAlive()
+        softSpacebar()
+    end)
+
+    -- keepalive ถี่ ๆ ทุก ~55 วิ
+    keepaliveThread = task.spawn(function()
+        while AFK_ON do
+            simulateKeepAlive()
+            task.wait(INTERVAL_KEEPALIVE)
+        end
+    end)
+
+    -- big click + spacebar ทุก 5 นาที
+    bigClickThread = task.spawn(function()
+        while AFK_ON do
+            local now = os.clock()
+            if now - lastBig >= INTERVAL_BIGCLICK then
+                simulateBig()
+                lastBig = now
+            end
+            if ENABLE_SAFE_JUMP and (now - lastJump >= SAFE_JUMP_EVERY) then
+                softSpacebar()
+                lastJump = now
+            end
+            task.wait(1)
+        end
+    end)
+end
+
+local function stopAFK()
+    if not AFK_ON then return end
+    AFK_ON = false
+    setAFKUI(false)
+    if idleConn then idleConn:Disconnect(); idleConn=nil end
+    -- threads จะหลุดจากลูปเอง
+end
+
+swAFK.MouseButton1Click:Connect(function()
+    if AFK_ON then stopAFK() else startAFK() end
+end)
+
+-- ให้สคริปต์อื่นเรียกได้
+_G.UFO_AFK_IsOn  = function() return AFK_ON end
+_G.UFO_AFK_Start = startAFK
+_G.UFO_AFK_Stop  = stopAFK
+_G.UFO_AFK_Set   = function(b) if b then startAFK() else stopAFK() end end
+
+-- ค่าเริ่มต้น
+setAFKUI(false)
+----------------------------------------------------------------
+-- 💰 AUTO-CLAIM (ทุก 5 วิ ยิง Claim ทุก Pet)
+----------------------------------------------------------------
+local function buildAutoClaimRow(y)
+    local row = make("Frame",{
+        Name="UFOX_RowClaim", Parent=content, BackgroundColor3=Color3.fromRGB(18,18,18),
+        Size=UDim2.new(1,-20,0,44), Position=UDim2.fromOffset(10,y)
+    },{
+        make("UICorner",{CornerRadius=UDim.new(0,10)}),
+        make("UIStroke",{Color=ACCENT, Thickness=2, Transparency=0.05})
+    })
+
+    local lb = make("TextLabel",{
+        Parent=row, BackgroundTransparency=1, Text="Auto-Claim (OFF)",
+        Font=Enum.Font.GothamBold, TextSize=15, TextColor3=FG,
+        TextXAlignment=Enum.TextXAlignment.Left,
+        Position=UDim2.new(0,12,0,0), Size=UDim2.new(1,-150,1,0)
+    },{})
+
+    local sw = make("TextButton",{
+        Parent=row, AutoButtonColor=false, Text="",
+        AnchorPoint=Vector2.new(1,0.5), Position=UDim2.new(1,-12,0.5,0),
+        Size=UDim2.fromOffset(60,24), BackgroundColor3=SUB
+    },{
+        make("UICorner",{CornerRadius=UDim.new(1,0)}),
+        make("UIStroke",{Color=ACCENT, Thickness=2, Transparency=0.05})
+    })
+    local knob = make("Frame",{
+        Parent=sw, Size=UDim2.fromOffset(20,20), Position=UDim2.new(0,2,0,2),
+        BackgroundColor3=Color3.fromRGB(210,60,60), BorderSizePixel=0
+    },{
+        make("UICorner",{CornerRadius=UDim.new(1,0)})
+    })
+
+    ----------------------------------------------------------------
+    -- Engine
+    ----------------------------------------------------------------
+    local ON=false
+    local INTERVAL=5
+    local loop
+
+    local function setUI(state)
+        if state then
+            lb.Text="Auto Collect Money (ON)"
+            TS:Create(sw,   TweenInfo.new(0.12), {BackgroundColor3=Color3.fromRGB(28,60,40)}):Play()
+            TS:Create(knob, TweenInfo.new(0.12), {Position=UDim2.new(1,-22,0,2), BackgroundColor3=ACCENT}):Play()
+        else
+            lb.Text="Auto Collect Money (OFF)"
+            TS:Create(sw,   TweenInfo.new(0.12), {BackgroundColor3=SUB}):Play()
+            TS:Create(knob, TweenInfo.new(0.12), {Position=UDim2.new(0,2,0,2), BackgroundColor3=Color3.fromRGB(210,60,60)}):Play()
+        end
+    end
+
+    local function claimAllPets()
+        local petsFolder = workspace:FindFirstChild("Pets")
+        if not petsFolder then return end
+
+        for _,pet in ipairs(petsFolder:GetChildren()) do
+            local root = pet:FindFirstChild("RootPart")
+            if root then
+                local re = root:FindFirstChild("RE")
+                if re and re:IsA("RemoteEvent") then
+                    pcall(function()
+                        re:FireServer("Claim")
+                    end)
+                end
+            end
+        end
+    end
+
+    local function startLoop()
+        if loop then return end
+        loop = task.spawn(function()
+            while ON do
+                claimAllPets()
+                for _=1, INTERVAL*10 do
+                    if not ON then break end
+                    task.wait(0.1)
+                end
+            end
+            loop=nil
+        end)
+    end
+
+    sw.MouseButton1Click:Connect(function()
+        ON = not ON
+        setUI(ON)
+        if ON then startLoop() end
+    end)
+
+    setUI(false)
+end
+
+-- เรียกสร้าง Auto-Claim Row ใต้ AFK
+local y = rowAFK and (rowAFK.Position.Y.Offset + rowAFK.Size.Y.Offset + 8) or 10
+buildAutoClaimRow(y)
