@@ -302,7 +302,7 @@ local ENABLE_SAFE_JUMP   = true
 
 -- ใช้รูปดำของคุณ (อัปโหลดใน Roblox แล้ว)
 local USE_IMAGE_BLACKOUT = true
-local IMAGE_ASSET_ID     = 84174878502255  -- <<<< เลขที่ให้มา
+local IMAGE_ASSET_ID     = 106100459535040  -- <<<< เลขที่ให้มา
 
 -------------------- SERVICES --------------------
 local TS  = TS or game:GetService("TweenService")
