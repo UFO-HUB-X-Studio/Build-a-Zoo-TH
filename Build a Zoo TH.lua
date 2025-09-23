@@ -406,11 +406,11 @@ end
 -- ===== UI states =====
 local function setAFKUI(on)
     if on then
-        lbAFK.Text = "AFK (ON)"
+        lbAFK.Text = "กันเตะ AFK (ON)"
         TS:Create(swAFK, TweenInfo.new(0.12), {BackgroundColor3 = Color3.fromRGB(28,60,40)}):Play()
         TS:Create(knob,  TweenInfo.new(0.12), {Position=UDim2.new(1,-22,0,2), BackgroundColor3=ACCENT}):Play()
     else
-        lbAFK.Text = "AFK (OFF)"
+        lbAFK.Text = "กันเตะ AFK (OFF)"
         TS:Create(swAFK, TweenInfo.new(0.12), {BackgroundColor3 = SUB}):Play()
         TS:Create(knob,  TweenInfo.new(0.12), {Position=UDim2.new(0,2,0,2),  BackgroundColor3=Color3.fromRGB(210,60,60)}):Play()
     end
