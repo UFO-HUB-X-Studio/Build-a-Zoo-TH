@@ -288,21 +288,19 @@ do
     end)
 end
 ----------------------------------------------------------------
--- 🔁 AFK AUTO-CLICK (anti-kick) + DARK OVERLAY (with your image)
+-- 🔁 AFK AUTO-CLICK (anti-kick) + DARK OVERLAY (Roblox Image ID)
 -- - กันเตะ: VirtualUser + VirtualInputManager + Idled hook
--- - ขณะ ON: ซ่อน UI เกมทั้งหมด + แสดงจอมืดจากรูปของคุณ
--- - UFO HUB X (mainGui) ยังมองเห็นอยู่ด้านบน
+-- - ขณะ ON: ซ่อน UI เกม + โชว์จอมืดจากรูป Roblox (ยังเห็น UFO HUB X)
+-- - วางบล็อกนี้ต่อจากที่ประกาศ 'content' และ 'mainGui' แล้ว
 ----------------------------------------------------------------
 
 -------------------- CONFIG --------------------
-local INTERVAL_KEEPALIVE = 55      -- keepalive ทุก 55 วิ
+local INTERVAL_KEEPALIVE = 55      -- keepalive ทุก 55 วิ (< 60)
 local INTERVAL_BIGCLICK  = 300     -- คลิกใหญ่ทุก 5 นาที
-local SAFE_JUMP_EVERY    = 300     -- space ทุก 5 นาที
+local SAFE_JUMP_EVERY    = 300     -- กด space ทุก 5 นาที
 local ENABLE_SAFE_JUMP   = true
 
--- ใช้รูปดำของคุณ (อัปโหลดใน Roblox แล้ว)
-local USE_IMAGE_BLACKOUT = true
-local IMAGE_ASSET_ID     = 106100459535040  -- <<<< เลขที่ให้มา
+local IMAGE_ASSET_ID     = 84174878502255  -- ✅ รูปใน Roblox ที่คุณให้มา
 
 -------------------- SERVICES --------------------
 local TS  = TS or game:GetService("TweenService")
@@ -315,16 +313,16 @@ local StarterGui = game:GetService("StarterGui")
 local CoreGui    = game:GetService("CoreGui")
 local ContentProvider = game:GetService("ContentProvider")
 
--- สีธีม (fallback)
+-- สีธีม fallback (ถ้ายังไม่ประกาศ)
 local ACCENT = ACCENT or Color3.fromRGB(0,255,140)
 local SUB    = SUB    or Color3.fromRGB(22,22,22)
 local FG     = FG     or Color3.fromRGB(235,235,235)
 
--- ต้องมี content (พื้นที่ปุ่ม) และ mainGui (UFO HUB X) อยู่แล้ว
+-- ต้องมี content (พื้นที่วางปุ่มของ UI คุณ) และ mainGui (UFO HUB X)
 local content = content
-local mainGui = mainGui or CoreGui:FindFirstChildWhichIsA("ScreenGui")
+local mainGui = mainGui or CoreGui:FindFirstChild("UFOHubX_Main")
 
--------------------- UI: แถวสวิตช์ AFK --------------------
+-------------------- Small helpers --------------------
 local function make(class, props, kids)
     local o=Instance.new(class)
     for k,v in pairs(props or {}) do o[k]=v end
@@ -332,7 +330,8 @@ local function make(class, props, kids)
     return o
 end
 
-local old = content and content:FindFirstChild("UFOX_RowAFK"); if old then old:Destroy() end
+-------------------- Row: AFK Switch --------------------
+local oldRow = content and content:FindFirstChild("UFOX_RowAFK"); if oldRow then oldRow:Destroy() end
 local rowAFK = make("Frame",{
     Name="UFOX_RowAFK", Parent=content, BackgroundColor3=Color3.fromRGB(18,18,18),
     Size=UDim2.new(1,-20,0,44), Position=UDim2.fromOffset(10,10)
@@ -345,7 +344,6 @@ local lbAFK = make("TextLabel",{
     Font=Enum.Font.GothamBold, TextSize=15, TextColor3=FG, TextXAlignment=Enum.TextXAlignment.Left,
     Position=UDim2.new(0,12,0,0), Size=UDim2.new(1,-150,1,0)
 },{})
-
 local swAFK = make("TextButton",{
     Parent=rowAFK, AutoButtonColor=false, Text="", AnchorPoint=Vector2.new(1,0.5),
     Position=UDim2.new(1,-12,0.5,0), Size=UDim2.fromOffset(60,24), BackgroundColor3=SUB
@@ -358,25 +356,53 @@ local knob = make("Frame",{
     BackgroundColor3=Color3.fromRGB(210,60,60), BorderSizePixel=0
 },{ make("UICorner",{CornerRadius=UDim.new(1,0)}) })
 
--------------------- DARK OVERLAY (อยู่ใต้ UFO HUB X) --------------------
+-------------------- DARK OVERLAY (ใต้ UFO HUB X) --------------------
+-- ตัวแก้: ถ้า IMAGE_ASSET_ID เป็น Decal → ดึง Texture id มาใช้กับ ImageLabel ให้เอง
+local function resolveImageAssetId(idNumber, timeout)
+    timeout = timeout or 3
+    -- ลอง preload โดยตรงก่อน
+    local img = Instance.new("ImageLabel")
+    img.Image = "rbxassetid://"..tostring(idNumber)
+    local ok = pcall(function() ContentProvider:PreloadAsync({img}) end)
+    if ok then return "rbxassetid://"..tostring(idNumber) end
+    -- ไม่ผ่าน → ใช้ Decal เพื่อขุด TextureId
+    local d = Instance.new("Decal")
+    d.Texture = "rbxassetid://"..tostring(idNumber)
+    local t0 = os.clock()
+    while d.Texture == "" and os.clock()-t0 < timeout do task.wait(0.05) end
+    local tex = d.Texture or ""
+    d:Destroy()
+    local realId = tex:match("(%d+)")
+    if realId then
+        img.Image = "rbxassetid://"..realId
+        ok = pcall(function() ContentProvider:PreloadAsync({img}) end)
+        if ok then return "rbxassetid://"..realId end
+    end
+    return nil
+end
+
 local overlayGui = Instance.new("ScreenGui")
 overlayGui.Name = "UFOX_DarkOverlay"
 overlayGui.IgnoreGuiInset = true
 overlayGui.ResetOnSpawn = false
 overlayGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-overlayGui.DisplayOrder = ((mainGui and mainGui.DisplayOrder) or 10) - 1 -- ใต้ UFO HUB X
 overlayGui.Enabled = false
 overlayGui.Parent  = CoreGui
 
+-- วางใต้ UFO HUB X
+local baseDO = (mainGui and mainGui.DisplayOrder) or 100
+overlayGui.DisplayOrder = baseDO - 1
+
 local blackout
-if USE_IMAGE_BLACKOUT and IMAGE_ASSET_ID > 0 then
+local resolved = resolveImageAssetId(IMAGE_ASSET_ID, 3)
+if resolved then
     blackout = Instance.new("ImageLabel")
-    blackout.Image = "rbxassetid://"..tostring(IMAGE_ASSET_ID)
+    blackout.Image = resolved
     blackout.ScaleType = Enum.ScaleType.Crop
     blackout.BackgroundTransparency = 1
     blackout.ImageTransparency = 0
-    pcall(function() ContentProvider:PreloadAsync({blackout}) end)
 else
+    -- fallback สีดำทึบ (กรณีโหลดรูปไม่ได้จริง ๆ)
     blackout = Instance.new("Frame")
     blackout.BackgroundColor3 = Color3.new(0,0,0)
     blackout.BackgroundTransparency = 0
@@ -385,10 +411,10 @@ blackout.Name = "Layer"
 blackout.Size = UDim2.fromScale(1,1)
 blackout.Position = UDim2.fromOffset(0,0)
 blackout.ZIndex = 0
-blackout.Active = true -- บล็อกคลิก UI เกมด้านล่าง
+blackout.Active = true   -- บล็อกคลิก/โฟกัส UI เกม
 blackout.Parent = overlayGui
 
--- ซ่อน CoreGui เกมเมื่อเปิด AFK
+-- ซ่อน CoreGui เกมตอน AFK ON
 local coreBackup = {}
 local function hideCoreGui()
     coreBackup = {
@@ -421,7 +447,7 @@ local function showCoreGui()
     coreBackup = {}
 end
 
--------------------- Anti-idle engines --------------------
+-------------------- Anti-idle Engines --------------------
 local AFK_ON=false
 local idleConn, keepaliveThread, bigClickThread
 local lastBig, lastJump = 0,0
@@ -449,6 +475,7 @@ local function softSpace()
         VIM:SendKeyEvent(false,Enum.KeyCode.Space, false, game)
     end)
 end
+
 local function keepAlive() tinyMouse(); vuKick() end
 local function bigClick()
     local x,y = camXY()
@@ -470,11 +497,14 @@ local function setAFKUI(on)
     end
 end
 
+-------------------- Start / Stop --------------------
 local function startAFK()
     if AFK_ON then return end
     AFK_ON=true; setAFKUI(true)
 
     overlayGui.Enabled = true
+    -- ให้ overlay ต่ำกว่า UFO HUB X เสมอ
+    overlayGui.DisplayOrder = ((mainGui and mainGui.DisplayOrder) or 100) - 1
     hideCoreGui()
 
     if idleConn then idleConn:Disconnect() end
@@ -498,10 +528,8 @@ end
 local function stopAFK()
     if not AFK_ON then return end
     AFK_ON=false; setAFKUI(false)
-
     overlayGui.Enabled = false
     showCoreGui()
-
     if idleConn then idleConn:Disconnect(); idleConn=nil end
 end
 
@@ -509,11 +537,13 @@ swAFK.MouseButton1Click:Connect(function()
     if AFK_ON then stopAFK() else startAFK() end
 end)
 
+-- ให้เรียกจากสคริปต์อื่นได้
 _G.UFO_AFK_IsOn  = function() return AFK_ON end
 _G.UFO_AFK_Start = startAFK
 _G.UFO_AFK_Stop  = stopAFK
 _G.UFO_AFK_Set   = function(b) if b then startAFK() else stopAFK() end end
 
+-- ค่าเริ่มต้น
 setAFKUI(false)
 ----------------------------------------------------------------
 -- 💰 AUTO-CLAIM (ทุก 5 วิ ยิง Claim ทุก Pet)
