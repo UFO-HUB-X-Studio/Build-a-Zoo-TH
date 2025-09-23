@@ -263,7 +263,7 @@ do
     make("TextLabel",{Parent=row, BackgroundTransparency=1, Size=UDim2.fromOffset(20,20),
         Font=Enum.Font.GothamBold, TextSize=16, Text="👽", TextColor3=FG})
     make("TextLabel",{Parent=row, BackgroundTransparency=1, Size=UDim2.new(1,-36,1,0),
-        Font=Enum.Font.GothamBold, TextSize=16, Text="Home",
+        Font=Enum.Font.GothamBold, TextSize=16, Text="หน้าหลัก",
         TextXAlignment=Enum.TextXAlignment.Left, TextColor3=FG})
 
     -- เอฟเฟกต์ hover เล็ก ๆ
@@ -517,11 +517,11 @@ local function buildAutoClaimRow(y)
 
     local function setUI(state)
         if state then
-            lb.Text="Auto Collect Money (ON)"
+            lb.Text="เก็บเงินอัตโนมัติ (ON)"
             TS:Create(sw,   TweenInfo.new(0.12), {BackgroundColor3=Color3.fromRGB(28,60,40)}):Play()
             TS:Create(knob, TweenInfo.new(0.12), {Position=UDim2.new(1,-22,0,2), BackgroundColor3=ACCENT}):Play()
         else
-            lb.Text="Auto Collect Money (OFF)"
+            lb.Text="เก็บเงินอัตโนมัติ (OFF)"
             TS:Create(sw,   TweenInfo.new(0.12), {BackgroundColor3=SUB}):Play()
             TS:Create(knob, TweenInfo.new(0.12), {Position=UDim2.new(0,2,0,2), BackgroundColor3=Color3.fromRGB(210,60,60)}):Play()
         end
@@ -570,3 +570,191 @@ end
 -- เรียกสร้าง Auto-Claim Row ใต้ AFK
 local y = rowAFK and (rowAFK.Position.Y.Offset + rowAFK.Size.Y.Offset + 8) or 10
 buildAutoClaimRow(y)
+----------------------------------------------------------------
+-- 🥚 AUTO-HATCH (force press like a finger) + fix one-egg bug
+-- ทำงาน: เปิด 2 วิ (กวาดกด Hatch ทุกฟอง) -> พัก 2 วิ -> วน
+-- ใช้ fireproximityprompt ถ้ามี; fallback ยิง RF:InvokeServer("Hatch")
+----------------------------------------------------------------
+local TweenFast = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+
+-- หา Y วางต่อท้าย
+local function nextRowY(pad)
+    pad = pad or 8
+    local y = 10
+    for _,c in ipairs(content:GetChildren()) do
+        if c:IsA("Frame") and c.Visible and c.AbsoluteSize.Y > 0 then
+            local yo = c.Position.Y.Offset + c.Size.Y.Offset
+            if yo + pad > y then y = yo + pad end
+        end
+    end
+    return y
+end
+
+-- ลบของเก่า (กันซ้ำ)
+do local old = content:FindFirstChild("RowAutoHatch"); if old then old:Destroy() end end
+
+-- กล่องแถว + UI
+local row = Instance.new("Frame")
+row.Name = "RowAutoHatch"
+row.Parent = content
+row.BackgroundColor3 = Color3.fromRGB(18,18,18)
+row.Size = UDim2.new(1,-20,0,44)
+row.Position = UDim2.fromOffset(10, nextRowY(8))
+Instance.new("UICorner", row).CornerRadius = UDim.new(0,10)
+local st = Instance.new("UIStroke", row); st.Color = ACCENT; st.Thickness = 2; st.Transparency = 0.05
+
+local lb = Instance.new("TextLabel")
+lb.Parent = row
+lb.BackgroundTransparency = 1
+lb.Font = Enum.Font.GothamBold
+lb.TextSize = 15
+lb.TextXAlignment = Enum.TextXAlignment.Left
+lb.TextColor3 = FG
+lb.Text = "Auto-Hatch (OFF)"
+lb.Position = UDim2.new(0,12,0,0)
+lb.Size = UDim2.new(1,-150,1,0)
+
+local sw = Instance.new("TextButton")
+sw.Parent = row
+sw.AutoButtonColor = false
+sw.Text = ""
+sw.AnchorPoint = Vector2.new(1,0.5)
+sw.Position = UDim2.new(1,-12,0.5,0)
+sw.Size = UDim2.fromOffset(60,24)
+sw.BackgroundColor3 = SUB
+Instance.new("UICorner", sw).CornerRadius = UDim.new(1,0)
+local st2 = Instance.new("UIStroke", sw); st2.Color = ACCENT; st2.Thickness = 2; st2.Transparency = 0.05
+
+local knob = Instance.new("Frame")
+knob.Parent = sw
+knob.Size = UDim2.fromOffset(20,20)
+knob.Position = UDim2.new(0,2,0,2)
+knob.BackgroundColor3 = Color3.fromRGB(210,60,60)
+knob.BorderSizePixel = 0
+Instance.new("UICorner", knob).CornerRadius = UDim.new(1,0)
+
+----------------------------------------------------------------
+-- Engine
+----------------------------------------------------------------
+local ON = false
+local runToken = 0  -- เพิ่ม token กันลูปค้าง/ซ้อน
+
+local hasFire = (typeof(fireproximityprompt)=="function")
+
+-- utility: พยายาม “กด” ProximityPrompt ให้เหมือนนิ้วกด
+local function pressPrompt(pp)
+    if not pp or not pp:IsA("ProximityPrompt") then return false end
+    -- ปรับระยะ/สายตาให้กดได้จากไกล (local เท่านั้น)
+    pcall(function()
+        pp.RequiresLineOfSight = false
+        pp.MaxActivationDistance = math.max(pp.MaxActivationDistance or 0, 1e6)
+        pp.HoldDuration = math.min(pp.HoldDuration or 0.1, 0.2)
+    end)
+
+    if hasFire then
+        local ok = pcall(function() fireproximityprompt(pp, 0.2) end)
+        if ok then return true end
+    end
+
+    -- fallback: ยิง RF ของ object นั้นโดยตรง (ถ้ามี)
+    local tgt = pp.Parent
+    local rf = tgt and tgt:FindFirstChild("RF")
+    if rf and rf:IsA("RemoteFunction") then
+        local ok = pcall(function() rf:InvokeServer("Hatch") end)
+        if ok then return true end
+    end
+    return false
+end
+
+-- กวาดทุกฟองที่ “พร้อม Hatch”:
+-- 1) ใช้ shared.LocalHatchProximity ก่อน (ถ้ามี)
+-- 2) แล้วสแกน workspace หา ProximityPrompt ที่ Enabled และ ActionText ดูคล้าย "Hatch"
+local function tryHatchAllOnce()
+    local fired = 0
+
+    -- (A) ตัวที่ UI โฟกัสอยู่
+    if shared.LocalHatchProximity and shared.LocalHatchProximity:IsA("ProximityPrompt") then
+        if shared.LocalHatchProximity.Enabled ~= false then
+            if pressPrompt(shared.LocalHatchProximity) then
+                fired += 1
+                task.wait(0.05)
+            end
+        end
+    end
+
+    -- (B) กวาดทั้งแมพ
+    for _,pp in ipairs(workspace:GetDescendants()) do
+        if not ON then break end
+        if pp:IsA("ProximityPrompt") and (pp.Enabled ~= false) then
+            -- เลี่ยง “Skip Wait” ด้วยการกรองข้อความให้มีคำว่า Hatch (บางเกมแปลภาษา → ใส่เงื่อนไขกว้าง)
+            local at = tostring(pp.ActionText or ""):lower()
+            if at:find("hatch") or at:find("孵化") or at:find("ไข่") or at=="" then
+                -- ถ้ามี RF อยู่ใต้วัตถุ ถือว่าใช่จุดไข่
+                local isEgg = (pp.Parent and pp.Parent:FindFirstChild("RF") ~= nil)
+                if isEgg then
+                    if pressPrompt(pp) then
+                        fired += 1
+                        task.wait(0.05)
+                    end
+                end
+            end
+        end
+    end
+
+    return fired
+end
+
+local function setUI(state)
+    if state then
+        lb.Text = "เปิดไข่อัตโนมัติ (ON)"
+        TS:Create(sw, TweenFast, {BackgroundColor3 = Color3.fromRGB(28,60,40)}):Play()
+        TS:Create(knob, TweenFast, {Position=UDim2.new(1,-22,0,2), BackgroundColor3=ACCENT}):Play()
+    else
+        lb.Text = "เปิดไข่อัตโนมัติ (OFF)"
+        TS:Create(sw, TweenFast, {BackgroundColor3 = SUB}):Play()
+        TS:Create(knob, TweenFast, {Position=UDim2.new(0,2,0,2), BackgroundColor3 = Color3.fromRGB(210,60,60)}):Play()
+    end
+end
+
+local function startLoop()
+    if ON then return end
+    ON = true
+    setUI(true)
+    runToken += 1
+    local myToken = runToken
+
+    task.spawn(function()
+        while ON and myToken == runToken do
+            -- เปิด 2 วิ: ยิงกวาดทุก 0.2 วิ
+            local t0 = os.clock()
+            while ON and myToken == runToken and (os.clock()-t0) < 2 do
+                tryHatchAllOnce()
+                task.wait(0.2)
+            end
+            -- พัก 2 วิ
+            local t1 = os.clock()
+            while ON and myToken == runToken and (os.clock()-t1) < 2 do
+                task.wait(0.1)
+            end
+        end
+    end)
+end
+
+local function stopLoop()
+    if not ON then return end
+    ON = false
+    runToken += 1  -- ยกเลิกลูปรอบเก่าแน่นอน
+    setUI(false)
+end
+
+sw.MouseButton1Click:Connect(function()
+    if ON then stopLoop() else startLoop() end
+end)
+
+-- ให้สคริปต์อื่นเรียกได้
+_G.UFO_HATCH_IsOn  = function() return ON end
+_G.UFO_HATCH_Start = startLoop
+_G.UFO_HATCH_Stop  = stopLoop
+_G.UFO_HATCH_Set   = function(b) if b then startLoop() else stopLoop() end end
+
+setUI(false)
