@@ -964,7 +964,7 @@ local rowS = make("Frame",{
 make("TextLabel",{Parent=rowS, BackgroundTransparency=1, Size=UDim2.fromOffset(20,20),
     Font=Enum.Font.GothamBold, TextSize=16, Text="🛒", TextColor3=FG})
 make("TextLabel",{Parent=rowS, BackgroundTransparency=1, Size=UDim2.new(1,-36,1,0),
-    Font=Enum.Font.GothamBold, TextSize=15, Text="Shop",
+    Font=Enum.Font.GothamBold, TextSize=15, Text="ร้านค้า",
     TextXAlignment=Enum.TextXAlignment.Left, TextColor3=FG})
 
 -- ===== 5) สไตล์ + สลับหน้า =====
@@ -1103,7 +1103,7 @@ make("TextLabel",{
 })
 make("TextLabel",{
     Parent=row, BackgroundTransparency=1, Size=UDim2.new(1,-36,1,0),
-    Font=Enum.Font.GothamBold, TextSize=15, Text="Fishing",
+    Font=Enum.Font.GothamBold, TextSize=15, Text="การตกปลา",
     TextXAlignment=Enum.TextXAlignment.Left, TextColor3=FG
 })
 
