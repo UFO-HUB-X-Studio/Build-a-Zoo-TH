@@ -830,10 +830,10 @@ _G.UFO_HATCH_Set   = function(b) if b then startLoop() else stopLoop() end end
 
 setUI(false)
 ----------------------------------------------------------------
--- 🛒 Shop Tab (Side button + content page + tab switching)
--- ต้องมีตัวแปร: left, content, TS, ACCENT, SUB, FG (มี fallback ให้)
+-- 🛒 FORCE Shop button as the 2nd item under Home (100% appear)
 ----------------------------------------------------------------
 local TS = TS or game:GetService("TweenService")
+local RunService = game:GetService("RunService")
 local ACCENT = ACCENT or Color3.fromRGB(0,255,140)
 local SUB    = SUB    or Color3.fromRGB(22,22,22)
 local FG     = FG     or Color3.fromRGB(235,235,235)
@@ -845,43 +845,49 @@ local function make(class, props, kids)
     return o
 end
 
--- หา/สร้างหน้า Home ถ้าไม่มี
-local pgHome = content:FindFirstChild("pgHome")
-if not pgHome then
-    pgHome = make("Frame", {
-        Name="pgHome", Parent=content, BackgroundTransparency=1,
-        Size=UDim2.new(1,-20,1,-20), Position=UDim2.new(0,10,0,10), Visible=true
+-- 1) สร้างหน้า Shop (content page) ถ้ายังไม่มี
+local pgShop = content:FindFirstChild("pgShop")
+if not pgShop then
+    pgShop = make("Frame",{
+        Name="pgShop", Parent=content, BackgroundTransparency=1,
+        Size=UDim2.new(1,-20,1,-20), Position=UDim2.new(0,10,0,10), Visible=false
+    },{})
+    make("TextLabel",{
+        Parent=pgShop, BackgroundTransparency=1, Size=UDim2.new(1,0,0,28),
+        Font=Enum.Font.GothamBold, TextSize=20, Text="🛒 Shop", TextColor3=FG,
+        TextXAlignment=Enum.TextXAlignment.Left
     },{})
 end
 
--- สร้างหน้า Shop (ถ้ายังไม่มี)
-local pgShop = content:FindFirstChild("pgShop")
-if pgShop then pgShop:Destroy() end
-pgShop = make("Frame", {
-    Name="pgShop", Parent=content, BackgroundTransparency=1,
-    Size=UDim2.new(1,-20,1,-20), Position=UDim2.new(0,10,0,10), Visible=false
-},{})
--- ตัวอย่างเนื้อหาในหน้า Shop (วางอะไรก็ได้เพิ่มเติมทีหลัง)
-make("TextLabel",{
-    Parent=pgShop, BackgroundTransparency=1, Size=UDim2.new(1,0,0,28),
-    Position=UDim2.new(0,0,0,0), Font=Enum.Font.GothamBold, TextSize=20,
-    Text="🛒 Shop", TextColor3=FG, TextXAlignment=Enum.TextXAlignment.Left
-},{})
-
--- ===== ปุ่ม Shop (แยกจาก Home) =====
--- จัด Layout ด้านซ้ายให้แน่นอนก่อน
-local list = left:FindFirstChildOfClass("UIListLayout")
-if not list then
-    make("UIListLayout", {Parent=left, Padding=UDim.new(0,10)},{})
+-- 2) หา Home ปุ่มเดิม (หรือสร้างให้)
+local btnHome = left:FindFirstChild("UFOX_HomeBtn")
+if not btnHome then
+    -- สร้าง Home คร่าวๆ เพื่อให้ Shop วางต่อได้ (ถ้ามีอยู่แล้วในโค้ดหลักจะไม่วิ่งมาบล็อกนี้)
+    btnHome = make("TextButton",{
+        Name="UFOX_HomeBtn", Parent=left, AutoButtonColor=false, Text="",
+        Size=UDim2.new(1,-16,0,38), Position=UDim2.fromOffset(8,8),
+        BackgroundColor3=SUB, ClipsDescendants=true
+    },{
+        make("UICorner",{CornerRadius=UDim.new(0,10)}),
+        make("UIStroke",{Color=ACCENT, Thickness=2, Transparency=0})
+    })
+    local row=make("Frame",{Parent=btnHome, BackgroundTransparency=1,
+        Size=UDim2.new(1,-16,1,0), Position=UDim2.new(0,8,0,0)},{
+        make("UIListLayout",{
+            FillDirection=Enum.FillDirection.Horizontal, Padding=UDim.new(0,8),
+            HorizontalAlignment=Enum.HorizontalAlignment.Left,
+            VerticalAlignment=Enum.VerticalAlignment.Center
+        })
+    })
+    make("TextLabel",{Parent=row, BackgroundTransparency=1, Size=UDim2.fromOffset(20,20),
+        Font=Enum.Font.GothamBold, TextSize=16, Text="🏠", TextColor3=FG})
+    make("TextLabel",{Parent=row, BackgroundTransparency=1, Size=UDim2.new(1,-36,1,0),
+        Font=Enum.Font.GothamBold, TextSize=15, Text="Home",
+        TextXAlignment=Enum.TextXAlignment.Left, TextColor3=FG})
 end
 
--- หา Home ปุ่มเดิม (ถ้ามี) เพื่อจัดลำดับใต้กัน
-local btnHome = left:FindFirstChild("UFOX_HomeBtn")
-
--- ลบ Shop เก่า
-local oldShop = left:FindFirstChild("UFOX_ShopBtn")
-if oldShop then oldShop:Destroy() end
-
+-- 3) ลบ Shop เก่าถ้ามี แล้วสร้างใหม่
+local oldShop = left:FindFirstChild("UFOX_ShopBtn"); if oldShop then oldShop:Destroy() end
 local btnShop = make("TextButton",{
     Name="UFOX_ShopBtn", Parent=left, AutoButtonColor=false, Text="",
     Size=UDim2.new(1,-16,0,38), BackgroundColor3=SUB, ClipsDescendants=true
@@ -889,16 +895,6 @@ local btnShop = make("TextButton",{
     make("UICorner",{CornerRadius=UDim.new(0,10)}),
     make("UIStroke",{Color=ACCENT, Thickness=2, Transparency=0.15})
 })
-
--- ลำดับ: ให้ Shop ต่ำกว่า Home
-if btnHome then
-    btnHome.LayoutOrder = 1
-    btnShop.LayoutOrder = 2
-else
-    btnShop.LayoutOrder = 1
-end
-
--- เนื้อหาภายในปุ่ม
 local row = make("Frame",{
     Parent=btnShop, BackgroundTransparency=1,
     Size=UDim2.new(1,-16,1,0), Position=UDim2.new(0,8,0,0)
@@ -909,17 +905,43 @@ local row = make("Frame",{
         VerticalAlignment=Enum.VerticalAlignment.Center
     })
 })
-make("TextLabel",{
-    Parent=row, BackgroundTransparency=1, Size=UDim2.fromOffset(20,20),
-    Font=Enum.Font.GothamBold, TextSize=16, Text="🛒", TextColor3=FG
-},{})
-make("TextLabel",{
-    Parent=row, BackgroundTransparency=1, Size=UDim2.new(1,-36,1,0),
+make("TextLabel",{Parent=row, BackgroundTransparency=1, Size=UDim2.fromOffset(20,20),
+    Font=Enum.Font.GothamBold, TextSize=16, Text="🛒", TextColor3=FG})
+make("TextLabel",{Parent=row, BackgroundTransparency=1, Size=UDim2.new(1,-36,1,0),
     Font=Enum.Font.GothamBold, TextSize=15, Text="Shop",
-    TextXAlignment=Enum.TextXAlignment.Left, TextColor3=FG
+    TextXAlignment=Enum.TextXAlignment.Left, TextColor3=FG})
+
+-- 4) ทำให้เป็น “ปุ่มลำดับที่ 2” แบบสองแนวทาง (รองรับทั้งมี/ไม่มี UIListLayout)
+local hasList = left:FindFirstChildOfClass("UIListLayout")
+if hasList then
+    -- ใช้ LayoutOrder ให้ Home=1, Shop=2
+    btnHome.LayoutOrder = 1
+    btnShop.LayoutOrder = 2
+else
+    -- วางตำแหน่งแบบกำหนดเอง ใต้ Home เสมอ
+    -- รอให้ขนาด Home คงที่ก่อนค่อยตั้งตำแหน่ง (กันเฟรมเรนเดอร์ยังไม่เสร็จ)
+    RunService.RenderStepped:Wait()
+    local y = (btnHome.Position.Y.Offset or 0) + (btnHome.Size.Y.Offset or 38) + 10
+    btnShop.Position = UDim2.fromOffset(btnHome.Position.X.Offset, y)
+end
+
+-- ถ้า left เป็น ScrollingFrame → ขยาย CanvasSize เผื่อปุ่ม 2 ปุ่ม
+if left:IsA("ScrollingFrame") then
+    local lastY = 0
+    for _,c in ipairs(left:GetChildren()) do
+        if c:IsA("GuiObject") and c.Visible then
+            lastY = math.max(lastY, c.AbsolutePosition.Y - left.AbsolutePosition.Y + c.AbsoluteSize.Y)
+        end
+    end
+    left.CanvasSize = UDim2.new(0, 0, 0, lastY + 12)
+end
+
+-- 5) Toggle หน้า Home/Shop (basic)
+local pgHome = content:FindFirstChild("pgHome") or make("Frame",{
+    Name="pgHome", Parent=content, BackgroundTransparency=1,
+    Size=UDim2.new(1,-20,1,-20), Position=UDim2.new(0,10,0,10), Visible=true
 },{})
 
--- สไตล์ปุ่มเวลา Active/Inactive
 local function setBtnActive(btn, active)
     local stroke = btn:FindFirstChildOfClass("UIStroke")
     if active then
@@ -931,41 +953,22 @@ local function setBtnActive(btn, active)
     end
 end
 
--- ฟังก์ชันสลับหน้า
 local function ShowPage(name)
     local isShop = (name=="Shop")
     pgHome.Visible = not isShop
     pgShop.Visible = isShop
-
-    if btnHome then setBtnActive(btnHome, not isShop) end
-    setBtnActive(btnShop, isShop)
-
-    -- ถ้าไม่มีหน้าอื่น ให้ใส่เอฟเฟกต์กระพริบ content ตอนเปลี่ยนหน้า
-    TS:Create(content, TweenInfo.new(0.08), {BackgroundTransparency = 0.02}):Play()
-    task.delay(0.1, function()
-        TS:Create(content, TweenInfo.new(0.10), {BackgroundTransparency = 0}):Play()
-    end)
+    setBtnActive(btnHome, not isShop)
+    setBtnActive(btnShop,  isShop)
 end
 
--- กดปุ่ม Shop → เปิดหน้า Shop
+btnHome.MouseButton1Click:Connect(function()
+    if typeof(_G.UFO_OpenHomePage)=="function" then pcall(_G.UFO_OpenHomePage) end
+    ShowPage("Home")
+end)
 btnShop.MouseButton1Click:Connect(function()
+    if typeof(_G.UFO_OpenShopPage)=="function" then pcall(_G.UFO_OpenShopPage) end
     ShowPage("Shop")
-    if typeof(_G.UFO_OpenShopPage)=="function" then
-        -- ถ้ามี logic พิเศษของเกม ให้เรียกได้ตรงนี้ด้วย
-        pcall(_G.UFO_OpenShopPage)
-    end
 end)
 
--- ถ้ามีปุ่ม Home เดิมอยู่ ให้ผูกให้เปิดหน้า Home ด้วย
-if btnHome and not btnHome:GetAttribute("HookedForTab") then
-    btnHome:SetAttribute("HookedForTab", true)
-    local oldConn
-    btnHome.MouseButton1Click:Connect(function()
-        -- ถ้ามีฟังก์ชันเดิม ก็เรียกด้วย
-        if typeof(_G.UFO_OpenHomePage)=="function" then pcall(_G.UFO_OpenHomePage) end
-        ShowPage("Home")
-    end)
-end
-
--- เริ่มต้นที่หน้า Home
+-- เริ่มต้นให้ Home active, Shop เป็นปุ่มที่ 2 ชัวร์
 ShowPage("Home")
