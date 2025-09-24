@@ -204,28 +204,45 @@ UIS.InputBegan:Connect(function(i,gp)
         if TOGGLE_DOCKED then dockToggleToMain() end
     end
 end)
-----------------------------------------------------------------
--- 🔩 REQUIRE: โค้ดนี้สมมติว่าคุณมีตัวแปร/ฟังก์ชันต่อไปนี้จาก UI หลัก:
--- mainGui, content, left, TS (TweenService), ACCENT, SUB, FG
--- ถ้าไม่มี ผมใส่ fallback ไว้ให้ด้านล่างแล้ว
-----------------------------------------------------------------
-local TS = TS or game:GetService("TweenService")
-local Players = game:GetService("Players")
-local LP = Players.LocalPlayer
-local VirtualUser = game:GetService("VirtualUser")
-local RS = game:GetService("ReplicatedStorage")
+-- ===== Force order: Home(1) -> Shop(2) -> Fishing(3) =====
+local function forceLeftOrder()
+    if not left then return end
 
-local ACCENT = ACCENT or Color3.fromRGB(0,255,140)
-local SUB    = SUB    or Color3.fromRGB(22,22,22)
-local FG     = FG     or Color3.fromRGB(235,235,235)
+    -- ensure list exists and uses LayoutOrder
+    local list = left:FindFirstChildOfClass("UIListLayout")
+    if not list then
+        list = Instance.new("UIListLayout")
+        list.Parent = left
+    end
+    list.FillDirection = Enum.FillDirection.Vertical
+    list.Padding = UDim.new(0, 10)
+    list.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    list.VerticalAlignment   = Enum.VerticalAlignment.Top
+    list.SortOrder = Enum.SortOrder.LayoutOrder  -- สำคัญ!
 
--- ตัวช่วยสร้างอินสแตนซ์
-local function make(class, props, kids)
-    local o=Instance.new(class)
-    for k,v in pairs(props or {}) do o[k]=v end
-    for _,c in ipairs(kids or {}) do c.Parent=o end
-    return o
+    -- fetch our buttons
+    local btnHome    = left:FindFirstChild("UFOX_HomeBtn")
+    local btnShop    = left:FindFirstChild("UFOX_ShopBtn")
+    local btnFishing = left:FindFirstChild("UFOX_FishingBtn")
+
+    -- set layout orders
+    if btnHome    then btnHome.LayoutOrder    = 1 end
+    if btnShop    then btnShop.LayoutOrder    = 2 end
+    if btnFishing then btnFishing.LayoutOrder = 3 end
+
+    -- push other stray children (ถ้ามี) ให้ไปท้ายสุด
+    local bump = 100
+    for _,child in ipairs(left:GetChildren()) do
+        if child:IsA("GuiObject") and not (child == btnHome or child == btnShop or child == btnFishing or child:IsA("UIListLayout") or child:IsA("UICorner")) then
+            child.LayoutOrder = bump
+            bump += 1
+        end
+    end
 end
+
+-- เรียกทันที + เรียกซ้ำเมื่อมีการเพิ่มของใหม่
+forceLeftOrder()
+left.ChildAdded:Connect(function() task.defer(forceLeftOrder) end)
 ----------------------------------------------------------------
 -- 🏠 HOME BUTTON (ยาวขึ้น + ขอบเขียวคม)
 ----------------------------------------------------------------
@@ -829,3 +846,422 @@ _G.UFO_HATCH_Stop  = stopLoop
 _G.UFO_HATCH_Set   = function(b) if b then startLoop() else stopLoop() end end
 
 setUI(false)
+----------------------------------------------------------------
+-- 🛒 Shop Tab (แยกเป็นปุ่มที่ 2 + สลับหน้าได้จริง)
+-- ต้องมี: left, content, TS, ACCENT, SUB, FG (มี fallback)
+----------------------------------------------------------------
+local TS = TS or game:GetService("TweenService")
+local ACCENT = ACCENT or Color3.fromRGB(0,255,140)
+local SUB    = SUB    or Color3.fromRGB(22,22,22)
+local FG     = FG     or Color3.fromRGB(235,235,235)
+
+local function make(class, props, kids)
+    local o=Instance.new(class); for k,v in pairs(props or {}) do o[k]=v end
+    for _,c in ipairs(kids or {}) do c.Parent=o end; return o
+end
+
+-- ===== 1) เตรียม content & เพจ =====
+if not content or not content.Parent then
+    warn("[UFOX] content not found"); return
+end
+
+-- เพจ Home
+local pgHome = content:FindFirstChild("pgHome")
+if not pgHome then
+    pgHome = make("Frame",{
+        Name="pgHome", Parent=content, BackgroundTransparency=1,
+        Size=UDim2.new(1,-20,1,-20), Position=UDim2.new(0,10,0,10), Visible=true
+    },{})
+end
+
+-- เพจ Shop (ลบเก่าแล้วสร้างใหม่)
+local oldPgShop = content:FindFirstChild("pgShop"); if oldPgShop then oldPgShop:Destroy() end
+local pgShop = make("Frame",{
+    Name="pgShop", Parent=content, BackgroundTransparency=1,
+    Size=UDim2.new(1,-20,1,-20), Position=UDim2.new(0,10,0,10), Visible=false
+},{})
+make("TextLabel",{
+    Parent=pgShop, BackgroundTransparency=1, Size=UDim2.new(1,0,0,28),
+    Font=Enum.Font.GothamBold, TextSize=20, Text="🛒 Shop",
+    TextColor3=FG, TextXAlignment=Enum.TextXAlignment.Left
+},{})
+
+-- 🔁 ย้ายคอนโทรลเดิม ๆ ของหน้า Home ให้ไปอยู่ใน pgHome
+-- (ทุก Frame/Button/Label ที่เป็นลูกของ content แต่ไม่ใช่สองเพจนี้ → ย้ายเข้าหน้า Home)
+for _,ch in ipairs(content:GetChildren()) do
+    if ch ~= pgHome and ch ~= pgShop and ch:IsA("GuiObject") then
+        ch.Parent = pgHome
+    end
+end
+
+-- ===== 2) Sidebar layout =====
+if not left or not left.Parent then
+    warn("[UFOX] left sidebar not found"); return
+end
+local layout = left:FindFirstChildOfClass("UIListLayout")
+if not layout then
+    layout = make("UIListLayout",{
+        Parent=left, Padding=UDim.new(0,10),
+        FillDirection=Enum.FillDirection.Vertical,
+        HorizontalAlignment=Enum.HorizontalAlignment.Center,
+        VerticalAlignment=Enum.VerticalAlignment.Begin
+    },{})
+end
+if not left:FindFirstChildOfClass("UIPadding") then
+    make("UIPadding",{Parent=left, PaddingTop=UDim.new(0,14), PaddingLeft=UDim.new(0,8), PaddingRight=UDim.new(0,8)},{})
+end
+
+-- ===== 3) ปุ่ม Home (#1) =====
+local btnHome = left:FindFirstChild("UFOX_HomeBtn")
+if not btnHome then
+    btnHome = make("TextButton",{
+        Name="UFOX_HomeBtn", Parent=left, AutoButtonColor=false, Text="",
+        Size=UDim2.new(1,-16,0,38), BackgroundColor3=SUB, ClipsDescendants=true,
+        LayoutOrder=1
+    },{
+        make("UICorner",{CornerRadius=UDim.new(0,10)}),
+        make("UIStroke",{Color=ACCENT, Thickness=2, Transparency=0}) -- ขอบเขียวคม
+    })
+    local row = make("Frame",{
+        Parent=btnHome, BackgroundTransparency=1,
+        Size=UDim2.new(1,-16,1,0), Position=UDim2.new(0,8,0,0)
+    },{
+        make("UIListLayout",{
+            FillDirection=Enum.FillDirection.Horizontal, Padding=UDim.new(0,8),
+            HorizontalAlignment=Enum.HorizontalAlignment.Left,
+            VerticalAlignment=Enum.VerticalAlignment.Center
+        })
+    })
+    make("TextLabel",{Parent=row, BackgroundTransparency=1, Size=UDim2.fromOffset(20,20),
+        Font=Enum.Font.GothamBold, TextSize=16, Text="🏠", TextColor3=FG})
+    make("TextLabel",{Parent=row, BackgroundTransparency=1, Size=UDim2.new(1,-36,1,0),
+        Font=Enum.Font.GothamBold, TextSize=15, Text="Home",
+        TextXAlignment=Enum.TextXAlignment.Left, TextColor3=FG})
+end
+btnHome.LayoutOrder = 1
+btnHome.Size = UDim2.new(1,-16,0,38) -- ให้เท่ากันแน่ ๆ
+
+-- ===== 4) ปุ่ม Shop (#2) =====
+local oldShop = left:FindFirstChild("UFOX_ShopBtn"); if oldShop then oldShop:Destroy() end
+local btnShop = make("TextButton",{
+    Name="UFOX_ShopBtn", Parent=left, AutoButtonColor=false, Text="",
+    Size=UDim2.new(1,-16,0,38), BackgroundColor3=SUB, ClipsDescendants=true,
+    LayoutOrder=2
+},{
+    make("UICorner",{CornerRadius=UDim.new(0,10)}),
+    make("UIStroke",{Color=ACCENT, Thickness=2, Transparency=0}) -- ขอบเขียวคม
+})
+local rowS = make("Frame",{
+    Parent=btnShop, BackgroundTransparency=1,
+    Size=UDim2.new(1,-16,1,0), Position=UDim2.new(0,8,0,0)
+},{
+    make("UIListLayout",{
+        FillDirection=Enum.FillDirection.Horizontal, Padding=UDim.new(0,8),
+        HorizontalAlignment=Enum.HorizontalAlignment.Left,
+        VerticalAlignment=Enum.VerticalAlignment.Center
+    })
+})
+make("TextLabel",{Parent=rowS, BackgroundTransparency=1, Size=UDim2.fromOffset(20,20),
+    Font=Enum.Font.GothamBold, TextSize=16, Text="🛒", TextColor3=FG})
+make("TextLabel",{Parent=rowS, BackgroundTransparency=1, Size=UDim2.new(1,-36,1,0),
+    Font=Enum.Font.GothamBold, TextSize=15, Text="Shop",
+    TextXAlignment=Enum.TextXAlignment.Left, TextColor3=FG})
+
+-- ===== 5) สไตล์ + สลับหน้า =====
+local function setBtnActive(btn, active)
+    local stroke = btn:FindFirstChildOfClass("UIStroke")
+    if active then
+        TS:Create(btn, TweenInfo.new(0.10), {BackgroundColor3 = Color3.fromRGB(32,32,32)}):Play()
+        if stroke then stroke.Transparency = 0 end
+    else
+        TS:Create(btn, TweenInfo.new(0.10), {BackgroundColor3 = SUB}):Play()
+        if stroke then stroke.Transparency = 0 end -- ให้เห็นขอบตลอด
+    end
+end
+
+local function ShowPage(name)
+    local isShop = (name == "Shop")
+    pgHome.Visible = not isShop
+    pgShop.Visible = isShop
+    setBtnActive(btnHome, not isShop)
+    setBtnActive(btnShop, isShop)
+end
+
+-- กันผูกซ้ำ
+if not btnHome:GetAttribute("UFOX_TabHooked") then
+    btnHome:SetAttribute("UFOX_TabHooked", true)
+    btnHome.MouseButton1Click:Connect(function()
+        if typeof(_G.UFO_OpenHomePage)=="function" then pcall(_G.UFO_OpenHomePage) end
+        ShowPage("Home")
+    end)
+end
+btnShop.MouseButton1Click:Connect(function()
+    ShowPage("Shop")
+    if typeof(_G.UFO_OpenShopPage)=="function" then pcall(_G.UFO_OpenShopPage) end
+end)
+
+-- เริ่มที่ Home
+ShowPage("Home")
+----------------------------------------------------------------
+-- 🎣 Fishing Tab (ปุ่มที่ 3) — แยกปุ่ม + หน้าเนื้อหา + สลับแท็บครบ
+-- ต้องมีตัวแปรจาก UI หลัก: left, content, TS, ACCENT, SUB, FG
+-- (มี fallback ให้ด้านล่าง หากตัวแปรยังไม่ถูกประกาศ)
+----------------------------------------------------------------
+local TS      = TS or game:GetService("TweenService")
+local ACCENT  = ACCENT  or Color3.fromRGB(0,255,140)
+local SUB     = SUB     or Color3.fromRGB(22,22,22)
+local FG      = FG      or Color3.fromRGB(235,235,235)
+
+local function make(class, props, kids)
+    local o = Instance.new(class)
+    for k,v in pairs(props or {}) do o[k]=v end
+    for _,c in ipairs(kids or {}) do c.Parent=o end
+    return o
+end
+
+-- ===== Ensure Layout on the left =====
+local list = left:FindFirstChildOfClass("UIListLayout")
+if not list then
+    make("UIListLayout", {Parent=left, Padding=UDim.new(0,10)})
+end
+
+-- ===== Ensure pages exist (Home / Shop) =====
+local pgHome = content:FindFirstChild("pgHome")
+if not pgHome then
+    pgHome = make("Frame", {
+        Name="pgHome", Parent=content, BackgroundTransparency=1,
+        Size=UDim2.new(1,-20,1,-20), Position=UDim2.new(0,10,0,10), Visible=true
+    })
+end
+
+local pgShop = content:FindFirstChild("pgShop")
+if not pgShop then
+    pgShop = make("Frame", {
+        Name="pgShop", Parent=content, BackgroundTransparency=1,
+        Size=UDim2.new(1,-20,1,-20), Position=UDim2.new(0,10,0,10), Visible=false
+    })
+    make("TextLabel",{
+        Parent=pgShop, BackgroundTransparency=1, Size=UDim2.new(1,0,0,28),
+        Position=UDim2.new(0,0,0,0), Font=Enum.Font.GothamBold, TextSize=20,
+        Text="🛒 Shop", TextColor3=FG, TextXAlignment=Enum.TextXAlignment.Left
+    })
+end
+
+-- ===== Create/Replace Fishing page =====
+local pgFishing = content:FindFirstChild("pgFishing")
+if pgFishing then pgFishing:Destroy() end
+pgFishing = make("Frame", {
+    Name="pgFishing", Parent=content, BackgroundTransparency=1,
+    Size=UDim2.new(1,-20,1,-20), Position=UDim2.new(0,10,0,10), Visible=false
+})
+-- ตัวอย่างเนื้อหาในหน้า Fishing
+make("TextLabel",{
+    Parent=pgFishing, BackgroundTransparency=1, Size=UDim2.new(1,0,0,28),
+    Position=UDim2.new(0,0,0,0), Font=Enum.Font.GothamBold, TextSize=20,
+    Text="🎣 Fishing", TextColor3=FG, TextXAlignment=Enum.TextXAlignment.Left
+})
+
+-- ===== Grab existing buttons (Home / Shop) if any =====
+local btnHome = left:FindFirstChild("UFOX_HomeBtn")
+local btnShop = left:FindFirstChild("UFOX_ShopBtn")
+
+-- ===== Build Fishing button (แยกปุ่มเป็นชิ้นที่ 3) =====
+local oldFish = left:FindFirstChild("UFOX_FishingBtn")
+if oldFish then oldFish:Destroy() end
+
+local btnFishing = make("TextButton",{
+    Name="UFOX_FishingBtn", Parent=left, AutoButtonColor=false, Text="",
+    Size=UDim2.new(1,-16,0,38), BackgroundColor3=SUB, ClipsDescendants=true
+},{
+    make("UICorner",{CornerRadius=UDim.new(0,10)}),
+    -- กรอบเขียวคมชัด (ไม่จาง/ไม่หาย)
+    make("UIStroke",{
+        Color=ACCENT, Thickness=2, Transparency=0,
+        ApplyStrokeMode=Enum.ApplyStrokeMode.Border
+    })
+})
+
+-- จัดลำดับ: Home(1) → Shop(2) → Fishing(3)
+if btnHome then btnHome.LayoutOrder = 1 end
+if btnShop then btnShop.LayoutOrder = 2 end
+btnFishing.LayoutOrder = 3
+
+-- เนื้อหาภายในปุ่ม Fishing
+local row = make("Frame",{
+    Parent=btnFishing, BackgroundTransparency=1,
+    Size=UDim2.new(1,-16,1,0), Position=UDim2.new(0,8,0,0)
+},{
+    make("UIListLayout",{
+        FillDirection=Enum.FillDirection.Horizontal, Padding=UDim.new(0,8),
+        HorizontalAlignment=Enum.HorizontalAlignment.Left,
+        VerticalAlignment=Enum.VerticalAlignment.Center
+    })
+})
+make("TextLabel",{
+    Parent=row, BackgroundTransparency=1, Size=UDim2.fromOffset(20,20),
+    Font=Enum.Font.GothamBold, TextSize=16, Text="🎣", TextColor3=FG
+})
+make("TextLabel",{
+    Parent=row, BackgroundTransparency=1, Size=UDim2.new(1,-36,1,0),
+    Font=Enum.Font.GothamBold, TextSize=15, Text="Fishing",
+    TextXAlignment=Enum.TextXAlignment.Left, TextColor3=FG
+})
+
+-- ===== ปรับสไตล์เวลา Active/Inactive (เน้นกรอบเขียว) =====
+local function setBtnActive(btn, active)
+    if not btn then return end
+    local stroke = btn:FindFirstChildOfClass("UIStroke")
+    if active then
+        TS:Create(btn, TweenInfo.new(0.12), {BackgroundColor3 = Color3.fromRGB(32,32,32)}):Play()
+        if stroke then stroke.Transparency = 0 end
+    else
+        TS:Create(btn, TweenInfo.new(0.12), {BackgroundColor3 = SUB}):Play()
+        if stroke then stroke.Transparency = 0.15 end
+    end
+end
+
+-- ===== สลับหน้า 3 แท็บ (Home / Shop / Fishing) =====
+local function ShowPage(name)
+    local isHome    = (name=="Home")
+    local isShop    = (name=="Shop")
+    local isFishing = (name=="Fishing")
+
+    pgHome.Visible    = isHome
+    pgShop.Visible    = isShop
+    pgFishing.Visible = isFishing
+
+    setBtnActive(btnHome,    isHome)
+    setBtnActive(btnShop,    isShop)
+    setBtnActive(btnFishing, isFishing)
+
+    -- เอฟเฟกต์เล็กตอนสลับหน้า
+    TS:Create(content, TweenInfo.new(0.08), {BackgroundTransparency = 0.02}):Play()
+    task.delay(0.1, function()
+        TS:Create(content, TweenInfo.new(0.10), {BackgroundTransparency = 0}):Play()
+    end)
+end
+
+-- ===== Hook ปุ่มทั้ง 3 =====
+if btnHome and not btnHome:GetAttribute("HookedForTab") then
+    btnHome:SetAttribute("HookedForTab", true)
+    btnHome.MouseButton1Click:Connect(function()
+        if typeof(_G.UFO_OpenHomePage)=="function" then pcall(_G.UFO_OpenHomePage) end
+        ShowPage("Home")
+    end)
+end
+
+if btnShop and not btnShop:GetAttribute("HookedForTab") then
+    btnShop:SetAttribute("HookedForTab", true)
+    btnShop.MouseButton1Click:Connect(function()
+        if typeof(_G.UFO_OpenShopPage)=="function" then pcall(_G.UFO_OpenShopPage) end
+        ShowPage("Shop")
+    end)
+end
+
+btnFishing.MouseButton1Click:Connect(function()
+    if typeof(_G.UFO_OpenFishingPage)=="function" then pcall(_G.UFO_OpenFishingPage) end
+    ShowPage("Fishing")
+end)
+
+-- เริ่มต้นแสดงหน้า Home
+ShowPage("Home")
+----------------------------------------------------------------
+-- 🧱 UFOX SIDEBAR NORMALIZER
+-- - ยืดปุ่มให้กว้างเต็มแถบซ้าย (มีระยะขอบซ้าย/ขวาเท่ากัน)
+-- - บังคับขอบสีเขียวติดถาวร
+-- - รองรับปุ่ม: Home, Shop, Fishing (เพิ่มชื่อปุ่มอื่นได้)
+----------------------------------------------------------------
+local LEFT = left
+local GREEN = Color3.fromRGB(0,255,140)
+local TARGET_NAMES = {
+    UFOX_HomeBtn   = true,
+    UFOX_ShopBtn   = true,
+    UFOX_FishingBtn= true, -- ✅ ปุ่มที่ 3: ตกปลา
+}
+
+if not LEFT then return end
+
+-- ติดตั้ง UIListLayout + UIPadding ให้แถบซ้าย (ถ้ายังไม่มี)
+local layout = LEFT:FindFirstChildOfClass("UIListLayout")
+if not layout then
+    layout = Instance.new("UIListLayout")
+    layout.FillDirection = Enum.FillDirection.Vertical
+    layout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+    layout.VerticalAlignment = Enum.VerticalAlignment.Top
+    layout.Padding = UDim.new(0,10)
+    layout.Parent = LEFT
+end
+local pad = LEFT:FindFirstChildOfClass("UIPadding")
+if not pad then
+    pad = Instance.new("UIPadding")
+    pad.Parent = LEFT
+end
+pad.PaddingLeft  = UDim.new(0,8)
+pad.PaddingRight = UDim.new(0,8)
+pad.PaddingTop   = UDim.new(0,8)
+
+-- ฟังก์ชัน: ยืดปุ่ม + ใส่ขอบเขียว
+local function styleButton(btn)
+    if not btn or not btn.Parent then return end
+
+    -- ยืดปุ่มให้เต็มกรอบซ้าย (กว้าง = 100% - padding, สูง 44px)
+    btn.AnchorPoint = Vector2.new(0,0)
+    btn.Position = UDim2.new(0,0,0,0)              -- ให้ layout จัดตำแหน่ง
+    btn.Size = UDim2.new(1, 0, 0, 44)              -- ✅ กว้างเต็มแถบ
+    btn.AutoButtonColor = false
+    btn.ClipsDescendants = true
+
+    -- ลบ Stroke เก่า แล้วใส่ขอบเขียวใหม่
+    for _,c in ipairs(btn:GetChildren()) do
+        if c:IsA("UIStroke") then c:Destroy() end
+    end
+    local stroke = Instance.new("UIStroke")
+    stroke.Name = "UFOX_Border"
+    stroke.Color = GREEN
+    stroke.Thickness = 2
+    stroke.Transparency = 0
+    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    stroke.LineJoinMode   = Enum.LineJoinMode.Round
+    stroke.Parent = btn
+
+    -- กันโดนโค้ดอื่นเปลี่ยนค่า → ตรวจซ้ำเป็นระยะสั้น ๆ
+    if not btn:GetAttribute("UFOX_Lock") then
+        btn:SetAttribute("UFOX_Lock", true)
+        task.spawn(function()
+            while btn.Parent and btn:GetAttribute("UFOX_Lock") do
+                -- ย้ำขนาด/ขอบ
+                if btn.Size ~= UDim2.new(1,0,0,44) then
+                    btn.Size = UDim2.new(1,0,0,44)
+                end
+                if not stroke.Parent then
+                    stroke.Parent = btn
+                end
+                stroke.Color = GREEN
+                stroke.Thickness = 2
+                stroke.Transparency = 0
+                stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+                task.wait(0.25)
+            end
+        end)
+        btn.ChildAdded:Connect(function(c)
+            if c:IsA("UIStroke") and c ~= stroke then c:Destroy() end
+        end)
+    end
+end
+
+-- ใช้กับปุ่มที่มีอยู่แล้ว
+for _,name in ipairs({"UFOX_HomeBtn","UFOX_ShopBtn","UFOX_FishingBtn"}) do
+    local b = LEFT:FindFirstChild(name)
+    if b and b:IsA("TextButton") then styleButton(b) end
+end
+
+-- ถ้าปุ่มถูกสร้างใหม่ทีหลัง → จัดให้อัตโนมัติ
+if not LEFT:GetAttribute("UFOX_SidebarNormalizerInstalled") then
+    LEFT:SetAttribute("UFOX_SidebarNormalizerInstalled", true)
+    LEFT.ChildAdded:Connect(function(child)
+        if child:IsA("TextButton") and TARGET_NAMES[child.Name] then
+            task.wait(0.05) -- เผื่อยังประกอบไม่เสร็จ
+            styleButton(child)
+        end
+    end)
+end
